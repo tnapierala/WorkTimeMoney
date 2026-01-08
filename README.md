@@ -1,6 +1,6 @@
 # 📱 WorkTimeMoney
 
-A lightweight **time‑tracking** app built with **Expo** and **React Native**.
+A lightweight **calculate** your earnings based on hours worked and your hourly rate built app with **Expo** and **React Native**.
 
 ---
 
