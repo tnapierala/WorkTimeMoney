@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+
+  /* You can add custom reusable classes here using @apply */
+  .card-premium {
+    @apply rounded-3xl p-6 shadow-lg border;
+  }
+
+  .btn-primary {
+    @apply bg-indigo-600 py-4 px-8 rounded-2xl items-center justify-center;
+  }
+
+  .btn-primary-text {
+    @apply text-white text-lg font-bold;
+  }
+}
