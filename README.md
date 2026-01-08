@@ -30,6 +30,8 @@ npm install
 ```bash
 # Run the app (Expo development server)
 npm run dev
+```
+```bash
 # or:
 npx expo start
 ```
