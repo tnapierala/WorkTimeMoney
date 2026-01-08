@@ -4,24 +4,30 @@ A lightweight **time‑tracking** app built with **Expo** and **React Native**.
 
 ---
 
-## ✨ Main Features
+## ✨ Main features
 - **🛠️ Onboarding flow** – guides first‑time users through a brief setup.
 - **🔐 Authentication** – Firebase auth integration with automatic session handling.
 - **🎨 Theme support** – dark/light mode powered by a custom `ThemeContext`.
 - **⏳ Loading indicator** – shows a spinner while the app initializes.
 - **🔀 Responsive navigation** – redirects based on auth state and onboarding status.
+- **💰 Calculate amount of money** – compute earnings based on hours worked and hourly rate.
+- **💾 Save data to database** – persist records in Firestore.
+- **📊 View history** – display logged hours and earnings per month.
+- **👤 Profile** – view and edit user profile information.
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Getting started
 ```bash
 # Clone the repository
 git clone "https://github.com/tnapierala/WorkTimeMoney"
 cd WorkTimeMoney
-
+```
+```bash
 # Install dependencies
 npm install
-
+```
+```bash
 # Run the app (Expo development server)
 npm run dev
 # or:
@@ -36,7 +42,7 @@ The app will open in the **Expo Go** client (iOS/Android) or in a web browser.
 2. **AsyncStorage** – no extra setup needed; onboarding flag is stored locally.
 3. **Theme** – customize colors in `context/ThemeContext.tsx` if desired.
 
-### 🗄️ Database / Firebase Configuration
+### 🗄️ Database / Firebase configuration
 Create the local config file (it is ignored by Git):
 ```bash
 cp config/firebaseConfig.example.ts config/firebaseConfig.ts
@@ -64,18 +70,18 @@ Enable **Authentication** (e.g., Email/Password) and **Firestore** in the Fireba
 
 ---
 
-## 🛠️ How to Use the App
-1. **Launch** the app on your device or emulator.
-2. **Onboarding** – on first launch you’ll be taken through a short onboarding flow where you can set your preferred theme.
-3. **Sign‑In / Register** – use the login or register screens to create an account (Firebase Auth).
-4. **Track Time** – after signing in you’ll see the main tab view where you can start, pause, and stop timers for different tasks.
-5. **View History** – the `History` tab shows a list of recorded sessions with timestamps and durations.
-6. **Settings** – access the settings screen to toggle dark/light mode, sign out, or clear onboarding data.
+## 🛠️ How to use the app
+1. **🚀 Launch** the app on your device or emulator.
+2. **🧭 Onboarding** – first launch presents a short onboarding process explaining the app.
+3. **🔐 Sign‑In / Register** – create or log into your account via Firebase Auth.
+4. **⏱️ Track Time** – add hours worked and hourly rate, then save to the database.
+5. **📊 View History** – see a summary of logged hours and earned money per month.
+6. **👤 Profile** – manage your profile, toggle dark/light mode, sign out, or clear onboarding data.
 
 ---
 
 ## 📚 Compatibility & Development
-- **Platforms**: iOS 14+, Android 8.0+ (tested on iPhone 13, Pixel 6, Pixel 10 Pro, OnePlus 8 Pro).
+- **Platforms**: iOS 14+, Android 8.0+ (tested on Pixel 10 Pro, OnePlus 8 Pro).
 - **Expo SDK**: 50 (or later). Ensure you have the latest Expo CLI (`npm i -g expo-cli`).
 - **Node.js**: v18 or newer.
 - **Development**: Run `npm run dev` for hot‑reloading. Use React Native Debugger or Flipper for debugging.
@@ -83,7 +89,7 @@ Enable **Authentication** (e.g., Email/Password) and **Firestore** in the Fireba
 ---
 
 ## ✍️ Author
-**Tomasz Napierala** – [tnapierala](https://github.com/tnapierala)
+**Tomasz Napierala** – [tnapierala](https://github.com/tnapierala)
 
 ---
 
@@ -96,7 +102,7 @@ Enable **Authentication** (e.g., Email/Password) and **Firestore** in the Fireba
 
 ---
 
-## 🛠️ Troubleshooting & How to Solve Common Issues
+## 🛠️ Troubleshooting & How to solve common issues
 - **Expo CLI not found** – install globally with `npm i -g expo-cli` and ensure it’s in your PATH.
 - **Metro bundler hangs** – clear caches: `expo start -c` or `npm start -- --reset-cache` or `npx expo start --clear` if new changes in CSS don't load.
 - **Firebase auth errors** – verify that the API key and authDomain in `firebaseConfig.ts` match the Firebase project settings.
@@ -107,14 +113,14 @@ Enable **Authentication** (e.g., Email/Password) and **Firestore** in the Fireba
 
 ---
 
-## 🚀 Future Development (Roadmap)
-- **Export/Import data** – allow users to back up their time logs to CSV or JSON and import them later.
-- **Team collaboration** – shared projects where multiple users can log time against the same tasks.
-- **Analytics dashboard** – visual charts (daily/weekly/monthly) showing time distribution per project.
-- **Push notifications** – remind users to start/stop timers or to take breaks.
-- **Customizable tags & categories** – let users create their own task categories and colour‑code them.
-- **Offline sync** – store logs locally and sync automatically when the device regains connectivity.
-- **Integration with calendar services** – import events from Google Calendar or Outlook to pre‑populate tasks.
+## 🚀 Future development (Roadmap)
+- **📤 Export/Import data** – allow users to back up their time logs to CSV or JSON and import them later.
+- **👥 Team collaboration** – shared projects where multiple users can log time against the same tasks.
+- **📊 Analytics dashboard** – visual charts (daily/weekly/monthly) showing time distribution per project.
+- **🔔 Push notifications** – remind users to save data or make calculations.
+- **🏷️ Customizable tags & categories** – let users create their own task categories and colour‑code them.
+- **🌐 Offline sync** – store logs locally and sync automatically when the device regains connectivity.
+- **📅 Integration with calendar services** – import events from Google Calendar or Outlook to pre‑populate tasks.
 
 ---
 
