@@ -1,11 +1,13 @@
-import { IconSymbol } from '@/components/ui/icon-symbol';
+import { IconSymbol } from '../components/ui/icon-symbol';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { collection, deleteDoc, doc, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, onSnapshot, orderBy, query } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Text, TouchableOpacity, View } from 'react-native';
-import { auth, db } from '../../config/firebaseConfig';
-import { useAppTheme } from '../../context/ThemeContext';
+import { auth, db } from '../config/firebaseConfig';
+import { useAppTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
+import { useToast } from '../context/ToastContext';
 
 interface Entry {
     id: string;
@@ -16,15 +18,34 @@ interface Entry {
     date: any;
 }
 
-export default function HistoryScreen() {
+export default function HistoryMoneyScreen() {
     const { isDark } = useAppTheme();
+    const { t, language } = useLanguage();
+    const { showToast } = useToast();
     const [entries, setEntries] = useState<Entry[]>([]);
     const [loading, setLoading] = useState(true);
+    const [userName, setUserName] = useState('');
     const router = useRouter();
 
     useEffect(() => {
         const user = auth.currentUser;
         if (!user) return;
+
+        // Fetch user's first name for a personalized header
+        const fetchUserData = async () => {
+            try {
+                const docSnap = await getDoc(doc(db, 'users', user.uid));
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    if (data.firstName) {
+                        setUserName(data.firstName);
+                    }
+                }
+            } catch (error) {
+                console.error('Error fetching user data:', error);
+            }
+        };
+        fetchUserData();
 
         const q = query(
             collection(db, `users/${user.uid}/entries`),
@@ -48,12 +69,12 @@ export default function HistoryScreen() {
 
     const handleDelete = (id: string) => {
         Alert.alert(
-            'Usuń wpis',
-            'Czy na pewno chcesz usunąć ten rekord?',
+            t('deleteEntryTitle'),
+            t('deleteEntryConfirm'),
             [
-                { text: 'Anuluj', style: 'cancel' },
+                { text: t('cancel'), style: 'cancel' },
                 {
-                    text: 'Usuń',
+                    text: t('removeBtn'),
                     style: 'destructive',
                     onPress: async () => {
                         try {
@@ -62,7 +83,7 @@ export default function HistoryScreen() {
                                 await deleteDoc(doc(db, `users/${user.uid}/entries`, id));
                             }
                         } catch (error) {
-                            Alert.alert('Błąd', 'Nie udało się usunąć wpisu.');
+                            showToast({ message: t('deleteError'), type: 'error' });
                         }
                     }
                 }
@@ -94,18 +115,17 @@ export default function HistoryScreen() {
                     </TouchableOpacity>
                 </View>
             </View>
-
             <View className="flex-row justify-between">
                 <View className="items-start">
-                    <Text className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">Godziny</Text>
+                    <Text className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">{t('hours')}</Text>
                     <Text className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>{item.hours}h</Text>
                 </View>
                 <View className="items-start">
-                    <Text className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">Stawka</Text>
+                    <Text className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">{t('rateLabel')}</Text>
                     <Text className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>{item.netIncome} zł</Text>
                 </View>
                 <View className="items-start">
-                    <Text className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">Suma</Text>
+                    <Text className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">{t('sumLabel')}</Text>
                     <Text className="text-sm font-bold text-indigo-600">{item.totalIncome.toFixed(2)} zł</Text>
                 </View>
             </View>
@@ -123,19 +143,39 @@ export default function HistoryScreen() {
     return (
         <View className={`flex-1 ${isDark ? 'bg-slate-900' : 'bg-gray-100'}`}>
             <StatusBar style={isDark ? "light" : "dark"} />
-            <View className={`pt-14 px-6 pb-5 ${isDark ? 'bg-slate-800 border-b border-slate-700' : 'bg-white shadow-sm'}`}>
-                <Text className={`text-3xl font-extrabold ${isDark ? 'text-white' : 'text-gray-900'}`}>Twoja Historia</Text>
-                <Text className={`text-base mt-1 ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>{entries.length} zapisanych rekordów</Text>
-            </View>
 
+            {/* Header styled exactly like home index.tsx */}
+            <View className="pt-[60px] px-6 mb-8 flex-row justify-between items-end">
+                <View className="flex-1 mr-4">
+                    <Text className={`text-lg font-medium ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>
+                        {t('hello')} {userName || (language === 'pl' ? 'Użytkowniku' : 'User')}!
+                    </Text>
+                    <View className="flex-row items-center mt-1">
+                        <TouchableOpacity onPress={() => router.back()} className="mr-3 p-1 -ml-1">
+                            <IconSymbol name="chevron.left" size={28} color="#4F46E5" />
+                        </TouchableOpacity>
+                        <Text className={`text-3xl font-extrabold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                            {t('moneyHistoryHeader')}
+                        </Text>
+                    </View>
+                </View>
+                <View className="items-end mb-1">
+                    <Text className={`text-xs font-semibold ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>
+                        {t('savedEntries')}
+                    </Text>
+                    <Text className="text-lg font-bold text-indigo-600">
+                        {entries.length}
+                    </Text>
+                </View>
+            </View>
             <FlatList
                 data={entries}
                 renderItem={renderItem}
                 keyExtractor={(item) => item.id}
-                contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
+                contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 120 }}
                 ListEmptyComponent={
                     <View className="mt-24 items-center px-10">
-                        <Text className="text-center text-slate-400 text-base">Brak wpisów. Dodaj coś na ekranie głównym!</Text>
+                        <Text className="text-center text-slate-400 text-base">{t('noHistoryMoneyPlaceholder')}</Text>
                     </View>
                 }
             />

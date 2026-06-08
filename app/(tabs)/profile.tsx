@@ -1,14 +1,17 @@
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { useToast } from '../../context/ToastContext';
 import { addMonths, eachDayOfInterval, endOfMonth, endOfWeek, format, getDate, getMonth, getYear, isSameDay, isSameMonth, setMonth, setYear, startOfMonth, startOfWeek, subMonths } from 'date-fns';
 import { pl } from 'date-fns/locale';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
+import { useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { addDoc, collection, doc, getDoc, getDocs, limit, orderBy, query, serverTimestamp, setDoc } from 'firebase/firestore';
-import React, { useEffect, useState } from 'react';
+import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
+import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, Clipboard, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { auth, db } from '../../config/firebaseConfig';
+import { useLanguage } from '../../context/LanguageContext';
 import { useAppTheme } from '../../context/ThemeContext';
 
 interface ProfileData {
@@ -19,6 +22,13 @@ interface ProfileData {
     avatarUrl?: string;
     rateType?: 'netto' | 'brutto';
     birthDate?: string;
+    role?: number;
+    employerId?: string | null;
+    employerName?: string | null;
+    employerCompanyName?: string | null;
+    companyName?: string;
+    companyPhone?: string;
+    companyDetails?: string;
 }
 
 interface RateHistory {
@@ -28,6 +38,8 @@ interface RateHistory {
 
 export default function ProfileScreen() {
     const { themeMode, setThemeMode, isDark } = useAppTheme();
+    const { language, setLanguage, t } = useLanguage();
+    const { showToast } = useToast();
     const [profile, setProfile] = useState<ProfileData>({
         firstName: '',
         lastName: '',
@@ -39,6 +51,8 @@ export default function ProfileScreen() {
     const [loading, setLoading] = useState(true);
     const [editModalVisible, setEditModalVisible] = useState(false);
     const [historyModalVisible, setHistoryModalVisible] = useState(false);
+    const [companyInfoModalVisible, setCompanyInfoModalVisible] = useState(false);
+    const [selectedInviteForInfo, setSelectedInviteForInfo] = useState<any>(null);
     const [editingField, setEditingField] = useState<keyof ProfileData | null>(null);
     const [editValue, setEditValue] = useState('');
     const [rateHistory, setRateHistory] = useState<RateHistory[]>([]);
@@ -84,9 +98,131 @@ export default function ProfileScreen() {
         }
     };
 
-    useEffect(() => {
-        fetchProfile();
-    }, []);
+    const [pendingInvitations, setPendingInvitations] = useState<any[]>([]);
+
+    useFocusEffect(
+        useCallback(() => {
+            fetchProfile();
+
+            let unsubInvites: (() => void) | undefined;
+            const user = auth.currentUser;
+            if (user && user.email) {
+                const emailClean = user.email.toLowerCase().trim();
+                const q = query(
+                    collection(db, 'invitations'),
+                    where('employeeEmail', '==', emailClean),
+                    where('status', '==', 'pending')
+                );
+                unsubInvites = onSnapshot(q, (snap) => {
+                    const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setPendingInvitations(list);
+                }, (error) => {
+                    console.error('Error listening to employee invitations:', error);
+                });
+            }
+
+            return () => {
+                if (unsubInvites) unsubInvites();
+            };
+        }, [])
+    );
+
+    const handleAcceptInvitation = async (invite: any) => {
+        const user = auth.currentUser;
+        if (!user) return;
+        try {
+            // 1. Update invitation document in Firestore
+            await updateDoc(doc(db, 'invitations', invite.id), {
+                status: 'accepted',
+                employeeUid: user.uid
+            });
+
+            // 2. Update employee's user document in Firestore
+            await updateDoc(doc(db, 'users', user.uid), {
+                employerId: invite.employerId,
+                employerName: invite.employerName,
+                employerCompanyName: invite.employerCompanyName || ''
+            });
+
+            setProfile(prev => ({
+                ...prev,
+                employerId: invite.employerId,
+                employerName: invite.employerName,
+                employerCompanyName: invite.employerCompanyName || ''
+            }));
+
+            setPendingInvitations(prev => prev.filter(inv => inv.id !== invite.id));
+            showToast({ message: `Zaakceptowano zaproszenie! Jesteś teraz przypisany do pracodawcy: ${invite.employerCompanyName || invite.employerName}`, type: 'success' });
+        } catch (error) {
+            console.error(error);
+            showToast({ message: 'Nie udało się zaakceptować zaproszenia.', type: 'error' });
+        }
+    };
+
+    const handleDeclineInvitation = async (inviteId: string) => {
+        try {
+            await updateDoc(doc(db, 'invitations', inviteId), {
+                status: 'declined'
+            });
+            setPendingInvitations(prev => prev.filter(inv => inv.id !== inviteId));
+            showToast({ message: 'Zaproszenie zostało odrzucone.', type: 'success' });
+        } catch (error) {
+            console.error(error);
+            showToast({ message: 'Nie udało się odrzucić zaproszenia.', type: 'error' });
+        }
+    };
+
+    const handleDisconnectEmployer = async () => {
+        const user = auth.currentUser;
+        if (!user || !user.email) return;
+        const emailClean = user.email.toLowerCase().trim();
+        Alert.alert(
+            'Rozłącz się',
+            'Czy na pewno chcesz się odpięć od obecnego pracodawcy?',
+            [
+                { text: 'Anuluj', style: 'cancel' },
+                {
+                    text: 'Rozłącz',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            const employerId = profile.employerId;
+
+                            // 1. Update user profile in Firestore
+                            await updateDoc(doc(db, 'users', user.uid), {
+                                employerId: null,
+                                employerName: null
+                            });
+
+                            // 2. Delete accepted invitation in Firestore
+                            const q = query(
+                                collection(db, 'invitations'),
+                                where('employerId', '==', employerId),
+                                where('employeeEmail', '==', emailClean),
+                                where('status', '==', 'accepted')
+                            );
+                            const snap = await getDocs(q);
+                            if (!snap.empty) {
+                                await deleteDoc(doc(db, 'invitations', snap.docs[0].id));
+                            }
+
+                            setProfile(prev => ({
+                                ...prev,
+                                employerId: null,
+                                employerName: null
+                            }));
+
+                            showToast({ message: 'Zostałeś odpięty od pracodawcy.', type: 'success' });
+                        } catch (error) {
+                            console.error(error);
+
+                            showToast({ message: 'Nie udało się rozłączyć z pracodawcą.', type: 'error' });
+                        }
+                    }
+                }
+            ]
+        );
+    };
 
     const openEdit = (field: keyof ProfileData) => {
         setEditingField(field);
@@ -103,11 +239,10 @@ export default function ProfileScreen() {
             if (editingField === 'defaultRate') {
                 const parsed = parseFloat(editValue.replace(',', '.'));
                 if (isNaN(parsed)) {
-                    Alert.alert('Błąd', 'Podaj poprawną liczbę');
+                    showToast({ message: 'Podaj poprawną liczbę', type: 'error' });
                     return;
                 }
                 finalValue = parsed;
-
                 if (finalValue !== profile.defaultRate) {
                     await addDoc(collection(db, `users/${user.uid}/rateHistory`), {
                         rate: finalValue,
@@ -115,21 +250,18 @@ export default function ProfileScreen() {
                     });
                 }
             }
-
             const updatedProfile = { ...profile, [editingField]: finalValue };
             await setDoc(doc(db, 'users', user.uid), updatedProfile, { merge: true });
             setProfile(updatedProfile);
             setEditModalVisible(false);
         } catch (error) {
-            Alert.alert('Błąd', 'Nie udało się zapisać zmian');
+            showToast({ message: 'Nie udało się zapisać zmian', type: 'error' });
         }
     };
-
     const copyToClipboard = (text: string) => {
         Clipboard.setString(text);
-        Alert.alert('Skopiowano', 'Identyfikator został skopiowany do schowka');
+        showToast({ message: 'Identyfikator został skopiowany do schowka', type: 'info' });
     };
-
     const pickImage = async () => {
         const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ['images'],
@@ -138,7 +270,6 @@ export default function ProfileScreen() {
             quality: 0.2,
             base64: true,
         });
-
         if (!result.canceled && result.assets[0].base64) {
             saveBase64Image(result.assets[0].base64);
         }
@@ -147,16 +278,15 @@ export default function ProfileScreen() {
     const saveBase64Image = async (base64String: string) => {
         const user = auth.currentUser;
         if (!user) return;
-
         setUploading(true);
         try {
             const avatarUrl = `data:image/jpeg;base64,${base64String}`;
             await setDoc(doc(db, 'users', user.uid), { avatarUrl }, { merge: true });
             setProfile(prev => ({ ...prev, avatarUrl }));
-            Alert.alert('Sukces', 'Awatar został zaktualizowany');
+            showToast({ message: 'Awatar został zaktualizowany', type: 'success' });
         } catch (error: any) {
             console.error(error);
-            Alert.alert('Błąd', 'Nie udało się zapisać zdjęcia');
+            showToast({ message: 'Nie udało się zapisać zdjęcia', type: 'error' });
         } finally {
             setUploading(false);
         }
@@ -195,13 +325,11 @@ export default function ProfileScreen() {
         if (Platform.OS === 'android') {
             setShowDatePicker(false);
         }
-
         if (selectedDate) {
             const day = selectedDate.getDate().toString().padStart(2, '0');
             const month = (selectedDate.getMonth() + 1).toString().padStart(2, '0');
             const year = selectedDate.getFullYear();
             const dateString = `${day}.${month}.${year}`;
-
             // Update the edit value in the modal instead of direct save
             setEditValue(dateString);
         }
@@ -224,7 +352,56 @@ export default function ProfileScreen() {
             <StatusBar style={isDark ? "light" : "dark"} />
             <SafeAreaView className="flex-1">
                 <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 120 }}>
-
+                    {/* Pending Invitations Section (At the beginning!) */}
+                    {pendingInvitations.length > 0 && (
+                        <View className="mb-6">
+                            <Text className={`text-xs uppercase font-bold tracking-widest ${isDark ? 'text-amber-400' : 'text-amber-600'} mb-3`}>
+                                {t('pendingInvites')} ({pendingInvitations.length})
+                            </Text>
+                            {pendingInvitations.map(invite => (
+                                <View
+                                    key={invite.id}
+                                    className={`rounded-3xl p-5 border ${isDark ? 'bg-amber-950/20 border-amber-900/40' : 'bg-amber-50 border-amber-100'
+                                        } mb-3 shadow-sm`}
+                                >
+                                    <View className="flex-row justify-between items-start mb-2">
+                                        <View className="flex-1 mr-2">
+                                            <Text className={`text-base font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>
+                                                {t('invitationFrom')} {invite.employerCompanyName || invite.employerName}
+                                            </Text>
+                                            <Text className={`text-xs mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                                                {t('senderLabel')}: {invite.employerName} ({invite.employerEmail})
+                                            </Text>
+                                        </View>
+                                        <TouchableOpacity
+                                            onPress={() => {
+                                                setSelectedInviteForInfo(invite);
+                                                setCompanyInfoModalVisible(true);
+                                            }}
+                                            className="p-2.5 bg-amber-500/10 dark:bg-amber-400/10 rounded-xl"
+                                        >
+                                            <IconSymbol name="info.circle" size={18} color={isDark ? '#F59E0B' : '#D97706'} />
+                                        </TouchableOpacity>
+                                    </View>
+                                    <View className="flex-row mt-2">
+                                        <TouchableOpacity
+                                            onPress={() => handleDeclineInvitation(invite.id)}
+                                            className={`flex-1 py-3 rounded-xl border mr-2 items-center justify-center ${isDark ? 'border-red-900/60 bg-red-950/10' : 'border-red-200 bg-red-50/50'
+                                                }`}
+                                        >
+                                            <Text className="text-red-500 font-bold text-sm">{t('decline')}</Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            onPress={() => handleAcceptInvitation(invite)}
+                                            className="flex-1 py-3 rounded-xl bg-indigo-600 items-center justify-center ml-2"
+                                        >
+                                            <Text className="text-white font-bold text-sm">{t('accept')}</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            ))}
+                        </View>
+                    )}
                     {/* Avatar Section */}
                     <View className="items-center my-6">
                         <View className="relative">
@@ -254,13 +431,70 @@ export default function ProfileScreen() {
                         </View>
                         <Text className={`text-2xl font-bold mt-4 ${isDark ? 'text-white' : 'text-gray-900'}`}>{profile.firstName} {profile.lastName}</Text>
                         <Text className={`text-sm mt-1 ${isDark ? 'text-indigo-500' : 'text-indigo-600'}`}>{auth.currentUser?.email}</Text>
+                        {(() => {
+                            const r = profile.role || 3;
+                            let badgeText = t('roleEmployee');
+                            let badgeBg = 'bg-indigo-600';
+                            if (r === 1) {
+                                badgeText = t('roleDev');
+                                badgeBg = 'bg-purple-600';
+                            } else if (r === 2) {
+                                badgeText = t('roleEmployer');
+                                badgeBg = 'bg-emerald-600';
+                            }
+                            return (
+                                <View className={`px-4 py-1 rounded-full ${badgeBg} mt-2`}>
+                                    <Text className="text-white text-[10px] font-extrabold uppercase tracking-wider">{badgeText}</Text>
+                                </View>
+                            );
+                        })()}
                     </View>
-
+                    {/* Employer Link Details */}
+                    {profile.role === 3 && profile.employerId && (
+                        <View className="mb-6">
+                            <Text className={`text-xs uppercase font-bold tracking-widest ${isDark ? 'text-slate-100' : 'text-gray-600'} mb-3`}>
+                                {t('yourEmployer')}
+                            </Text>
+                            <View className={`rounded-3xl p-5 border ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-300 shadow-sm'}`}>
+                                <View className="flex-row justify-between items-center mb-4">
+                                    <View className="flex-1 mr-3">
+                                        {profile.employerCompanyName ? (
+                                            <>
+                                                <Text className={`text-base font-bold ${isDark ? 'text-white' : 'text-gray-800'}`}>
+                                                    {profile.employerCompanyName}
+                                                </Text>
+                                                <Text className={`text-xs ${isDark ? 'text-slate-400' : 'text-gray-500'} mt-0.5`}>
+                                                    {t('roleEmployer')}: {profile.employerName}
+                                                </Text>
+                                            </>
+                                        ) : (
+                                            <Text className={`text-base font-bold ${isDark ? 'text-white' : 'text-gray-800'}`}>
+                                                {profile.employerName}
+                                            </Text>
+                                        )}
+                                        <Text className={`text-xs ${isDark ? 'text-slate-400' : 'text-gray-500'} mt-1`}>
+                                            {t('statusConnected')}
+                                        </Text>
+                                    </View>
+                                    <View className="w-10 h-10 rounded-full bg-emerald-50 dark:bg-emerald-950/20 items-center justify-center">
+                                        <IconSymbol name="person.fill" size={20} color="#10B981" />
+                                    </View>
+                                </View>
+                                <TouchableOpacity
+                                    onPress={handleDisconnectEmployer}
+                                    className={`py-3.5 rounded-xl border items-center justify-center ${isDark ? 'border-red-900/60 bg-red-950/10' : 'border-red-200 bg-red-50/50'
+                                        }`}
+                                >
+                                    <Text className="text-red-500 font-bold text-sm">{t('disconnectFromEmployer')}</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    )}
                     {/* Profile Section */}
-                    <Text className={`text-xs uppercase font-bold tracking-widest ${isDark ? 'text-slate-100' : 'text-gray-600'} mb-3 mt-6`}>Twój profil</Text>
+                    <Text className={`text-xs uppercase font-bold tracking-widest ${isDark ? 'text-slate-100' : 'text-gray-600'} mb-3 mt-6`}>{t('yourProfile')}</Text>
                     <View className={`rounded-3xl border ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-300 shadow-sm'}`}>
                         <View className="flex-row justify-between items-center px-4 py-4">
-                            <Text className={`text-base ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>UID</Text>
+                            <Text className={`text-base ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>{t('uid')}</Text>
                             <View className="flex-row items-center flex-1 justify-end ml-4">
                                 <Text className={`text-base mr-3 font-semibold ${isDark ? 'text-slate-300' : 'text-gray-700'}`} numberOfLines={1}>{auth.currentUser?.uid}</Text>
                                 <TouchableOpacity onPress={() => copyToClipboard(auth.currentUser?.uid || '')}>
@@ -268,136 +502,194 @@ export default function ProfileScreen() {
                                 </TouchableOpacity>
                             </View>
                         </View>
-
                         <View className={`h-[1px] mx-4 ${isDark ? 'bg-slate-700' : 'bg-gray-300'}`} />
-
                         <ProfileItem
-                            label="Imię"
-                            value={profile.firstName || 'Uzupełnij...'}
+                            label={t('firstName')}
+                            value={profile.firstName || t('notProvided')}
                             onPress={() => openEdit('firstName')}
                             isDark={isDark}
                         />
-
                         <View className={`h-[1px] mx-4 ${isDark ? 'bg-slate-700' : 'bg-gray-300'}`} />
-
                         <ProfileItem
-                            label="Nazwisko"
-                            value={profile.lastName || 'Uzupełnij...'}
+                            label={t('lastName')}
+                            value={profile.lastName || t('notProvided')}
                             onPress={() => openEdit('lastName')}
                             isDark={isDark}
                         />
-
                         <View className={`h-[1px] mx-4 ${isDark ? 'bg-slate-700' : 'bg-gray-300'}`} />
-
                         <ProfileItem
-                            label="Data urodzenia"
-                            value={profile.birthDate || 'Uzupełnij...'}
+                            label={t('birthDate')}
+                            value={profile.birthDate || t('notProvided')}
                             onPress={() => openEdit('birthDate')}
                             isDark={isDark}
                         />
-                    </View>
-
-                    {/* Settings Section */}
-                    <Text className={`text-xs uppercase font-bold tracking-widest ${isDark ? 'text-slate-100' : 'text-gray-600'} mb-3 mt-6`}>Ustawienia</Text>
-                    <View className={`rounded-3xl border ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-300 shadow-sm'}`}>
-                        <View className="flex-row justify-between items-center px-4 py-4">
-                            <Text className={`text-base ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>Domyślna stawka</Text>
-                            <View className="flex-row items-center flex-1 justify-end ml-4">
-                                <Text className={`text-base mr-3 font-semibold ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>{profile.defaultRate ? `${profile.defaultRate} zł/h` : 'Nie ustawiono'}</Text>
-                                <TouchableOpacity onPress={async () => {
-                                    await fetchRateHistory();
-                                    setHistoryModalVisible(true);
-                                }} className="px-2">
-                                    <IconSymbol name="history" size={20} color={secondaryIconColor} />
-                                </TouchableOpacity>
-                                <TouchableOpacity onPress={() => openEdit('defaultRate')} className="px-2">
-                                    <IconSymbol name="pencil" size={18} color={secondaryIconColor} />
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-
                         <View className={`h-[1px] mx-4 ${isDark ? 'bg-slate-700' : 'bg-gray-300'}`} />
-
-                        <View className="flex-row justify-between items-center px-4 py-4">
-                            <Text className={`text-base ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>Rodzaj stawki</Text>
-                            <View className={`flex-row bg-${isDark ? 'slate-900' : 'gray-100'} rounded-xl p-1`}>
-                                <TouchableOpacity
-                                    onPress={async () => {
-                                        const updated = { ...profile, rateType: 'netto' as const };
-                                        await setDoc(doc(db, 'users', auth.currentUser!.uid), updated, { merge: true });
-                                        setProfile(updated);
-                                    }}
-                                    className={`px-4 py-2 rounded-lg ${profile.rateType === 'netto' ? 'bg-indigo-600' : ''}`}
-                                >
-                                    <Text className={`text-sm font-bold ${profile.rateType === 'netto' ? 'text-white' : isDark ? 'text-slate-400' : 'text-gray-500'}`}>Netto</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    onPress={async () => {
-                                        const updated = { ...profile, rateType: 'brutto' as const };
-                                        await setDoc(doc(db, 'users', auth.currentUser!.uid), updated, { merge: true });
-                                        setProfile(updated);
-                                    }}
-                                    className={`px-4 py-2 rounded-lg ${profile.rateType === 'brutto' ? 'bg-indigo-600' : ''}`}
-                                >
-                                    <Text className={`text-sm font-bold ${profile.rateType === 'brutto' ? 'text-white' : isDark ? 'text-slate-400' : 'text-gray-500'}`}>Brutto</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
+                        <ProfileItem
+                            label={t('phone')}
+                            value={profile.phone || t('notProvided')}
+                            onPress={() => openEdit('phone')}
+                            isDark={isDark}
+                        />
                     </View>
-
+                    {/* Company Info Section (For Employer only) */}
+                    {profile.role === 2 && (
+                        <>
+                            <Text className={`text-xs uppercase font-bold tracking-widest ${isDark ? 'text-slate-100' : 'text-gray-600'} mb-3 mt-6`}>{t('companyInfo')}</Text>
+                            <View className={`rounded-3xl border ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-300 shadow-sm'}`}>
+                                <ProfileItem
+                                    label={t('companyName')}
+                                    value={profile.companyName || t('notProvided')}
+                                    onPress={() => openEdit('companyName')}
+                                    isDark={isDark}
+                                />
+                                <View className={`h-[1px] mx-4 ${isDark ? 'bg-slate-700' : 'bg-gray-300'}`} />
+                                <ProfileItem
+                                    label={t('companyPhone')}
+                                    value={profile.companyPhone || t('notProvided')}
+                                    onPress={() => openEdit('companyPhone')}
+                                    isDark={isDark}
+                                />
+                                <View className={`h-[1px] mx-4 ${isDark ? 'bg-slate-700' : 'bg-gray-300'}`} />
+                                <ProfileItem
+                                    label={t('companyDetails')}
+                                    value={profile.companyDetails || t('notProvided')}
+                                    onPress={() => openEdit('companyDetails')}
+                                    isDark={isDark}
+                                    isColumn={true}
+                                />
+                            </View>
+                        </>
+                    )}
+                    {/* Settings Section */}
+                    {profile.role !== 2 && (
+                        <>
+                            <Text className={`text-xs uppercase font-bold tracking-widest ${isDark ? 'text-slate-100' : 'text-gray-600'} mb-3 mt-6`}>{t('settings')}</Text>
+                            <View className={`rounded-3xl border ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-300 shadow-sm'}`}>
+                                <View className="flex-row justify-between items-center px-4 py-4">
+                                    <Text className={`text-base ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>{t('defaultRate')}</Text>
+                                    <View className="flex-row items-center flex-1 justify-end ml-4">
+                                        <Text className={`text-base mr-3 font-semibold ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>{profile.defaultRate ? `${profile.defaultRate} zł/h` : t('notSet')}</Text>
+                                        <TouchableOpacity onPress={async () => {
+                                            await fetchRateHistory();
+                                            setHistoryModalVisible(true);
+                                        }} className="px-2">
+                                            <IconSymbol name="history" size={20} color={secondaryIconColor} />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity onPress={() => openEdit('defaultRate')} className="px-2">
+                                            <IconSymbol name="pencil" size={18} color={secondaryIconColor} />
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                                <View className={`h-[1px] mx-4 ${isDark ? 'bg-slate-700' : 'bg-gray-300'}`} />
+                                <View className="flex-row justify-between items-center px-4 py-4">
+                                    <Text className={`text-base ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>{t('rateTypeLabel')}</Text>
+                                    <View className={`flex-row bg-${isDark ? 'slate-900' : 'gray-100'} rounded-xl p-1`}>
+                                        <TouchableOpacity
+                                            onPress={async () => {
+                                                const updated = { ...profile, rateType: 'netto' as const };
+                                                await setDoc(doc(db, 'users', auth.currentUser!.uid), updated, { merge: true });
+                                                setProfile(updated);
+                                            }}
+                                            className={`px-4 py-2 rounded-lg ${profile.rateType === 'netto' ? 'bg-indigo-600' : ''}`}
+                                        >
+                                            <Text className={`text-sm font-bold ${profile.rateType === 'netto' ? 'text-white' : isDark ? 'text-slate-400' : 'text-gray-500'}`}>{t('netto')}</Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            onPress={async () => {
+                                                const updated = { ...profile, rateType: 'brutto' as const };
+                                                await setDoc(doc(db, 'users', auth.currentUser!.uid), updated, { merge: true });
+                                                setProfile(updated);
+                                            }}
+                                            className={`px-4 py-2 rounded-lg ${profile.rateType === 'brutto' ? 'bg-indigo-600' : ''}`}
+                                        >
+                                            <Text className={`text-sm font-bold ${profile.rateType === 'brutto' ? 'text-white' : isDark ? 'text-slate-400' : 'text-gray-500'}`}>{t('brutto')}</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            </View>
+                        </>
+                    )}
+                    {/* Language Section */}
+                    <Text className={`text-xs uppercase font-bold tracking-widest ${isDark ? 'text-slate-100' : 'text-gray-600'} mb-3 mt-6`}>{t('languageLabel')}</Text>
+                    <View className={`rounded-3xl border ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-300 shadow-sm'} mb-2`}>
+                        <ThemeOption
+                            label={t('langPl')}
+                            active={language === 'pl'}
+                            onPress={() => setLanguage('pl')}
+                            isDark={isDark}
+                        />
+                        <View className={`h-[1px] mx-4 ${isDark ? 'bg-slate-700' : 'bg-gray-300'}`} />
+                        <ThemeOption
+                            label={t('langEn')}
+                            active={language === 'en'}
+                            onPress={() => setLanguage('en')}
+                            isDark={isDark}
+                        />
+                    </View>
                     {/* Theme Section */}
-                    <Text className={`text-xs uppercase font-bold tracking-widest ${isDark ? 'text-slate-100' : 'text-gray-600'} mb-3 mt-4`}>Wygląd</Text>
+                    <Text className={`text-xs uppercase font-bold tracking-widest ${isDark ? 'text-slate-100' : 'text-gray-600'} mb-3 mt-4`}>{t('appearance')}</Text>
                     <View className={`rounded-3xl border ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-300 shadow-sm'}`}>
                         <ThemeOption
-                            label="Jasny"
+                            label={t('themeLight')}
                             active={themeMode === 'light'}
                             onPress={() => setThemeMode('light')}
                             isDark={isDark}
                         />
                         <View className={`h-[1px] mx-4 ${isDark ? 'bg-slate-700' : 'bg-gray-300'}`} />
                         <ThemeOption
-                            label="Ciemny"
+                            label={t('themeDark')}
                             active={themeMode === 'dark'}
                             onPress={() => setThemeMode('dark')}
                             isDark={isDark}
                         />
                         <View className={`h-[1px] mx-4 ${isDark ? 'bg-slate-700' : 'bg-gray-300'}`} />
                         <ThemeOption
-                            label="Systemowy"
+                            label={t('themeSystem')}
                             active={themeMode === 'system'}
                             onPress={() => setThemeMode('system')}
                             isDark={isDark}
                         />
                     </View>
-
                     <TouchableOpacity
                         className={`mt-10 p-5 rounded-3xl items-center border bg-red-600 border-red-600 ${isDark ? null : 'shadow-sm'}`}
                         onPress={() => auth.signOut()}
                     >
-                        <Text className={`text-base font-bold ${isDark ? 'text-white' : 'text-white'}`}>Wyloguj się</Text>
+                        <Text className={`text-base font-bold ${isDark ? 'text-white' : 'text-white'}`}>{t('logout')}</Text>
                     </TouchableOpacity>
-
                 </ScrollView>
             </SafeAreaView>
-
             {/* Edit Modal */}
             <Modal visible={editModalVisible} transparent animationType="fade">
                 <View className="flex-1 bg-black/70 justify-center p-6">
                     <View className={`relative rounded-3xl p-6 border ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-300'}`}>
-                        <Text className={`text-x font-bold mb-5 text-center ${isDark ? 'text-slate-100' : 'text-gray-900'}`}>
-                            Edytuj {editingField === 'firstName' ? 'Imię' : editingField === 'lastName' ? 'Nazwisko' : editingField === 'birthDate' ? 'Datę urodzenia' : 'Stawkę'}
+                        <Text className={`text-xl font-bold mb-5 text-center ${isDark ? 'text-slate-100' : 'text-gray-900'}`}>
+                            {t('edit')} {
+                                editingField === 'firstName' ? t('firstName') :
+                                    editingField === 'lastName' ? t('lastName') :
+                                        editingField === 'birthDate' ? t('birthDate') :
+                                            editingField === 'phone' ? t('phone') :
+                                                editingField === 'companyName' ? t('companyName') :
+                                                    editingField === 'companyPhone' ? t('companyPhone') :
+                                                        editingField === 'companyDetails' ? t('companyDetails') :
+                                                            editingField === 'defaultRate' ? t('defaultRate') : ''
+                            }
                         </Text>
                         <View className={`relative flex ${editingField === 'birthDate' ? 'mb-4' : 'mb-6'}`}>
                             <TextInput
-                                className={`w-90 border rounded-xl p-4 text-base ${isDark ? 'bg-slate-800 border-slate-500 text-slate-300' : 'bg-gray-100 border-gray-300 text-gray-900'}`}
+                                className={`w-full border rounded-xl p-4 text-base ${isDark ? 'bg-slate-800 border-slate-500 text-slate-300' : 'bg-gray-100 border-gray-300 text-gray-900'}`}
                                 value={editValue}
                                 onChangeText={setEditValue}
-                                keyboardType={editingField === 'defaultRate' || editingField === 'birthDate' ? (Platform.OS === 'ios' ? 'decimal-pad' : 'numeric') : 'default'}
+                                keyboardType={
+                                    editingField === 'defaultRate' || editingField === 'birthDate' ? (Platform.OS === 'ios' ? 'decimal-pad' : 'numeric') :
+                                        editingField === 'phone' || editingField === 'companyPhone' ? 'phone-pad' : 'default'
+                                }
                                 placeholder={editingField === 'birthDate' ? 'DD.MM.YYYY' : ''}
                                 placeholderTextColor={isDark ? '#94A3B8' : '#9CA3AF'}
                                 autoFocus
+                                multiline={editingField === 'companyDetails'}
+                                numberOfLines={editingField === 'companyDetails' ? 4 : 1}
+                                style={editingField === 'companyDetails' ? { height: 100, textAlignVertical: 'top' } : undefined}
                             />
-
                             {editingField === 'birthDate' && (
                                 <TouchableOpacity
                                     onPress={openCustomDatePicker}
@@ -410,21 +702,20 @@ export default function ProfileScreen() {
                         </View>
                         {editingField === 'birthDate' && (
                             <Text className={`text-xs mb-6 -mt-3 text-center ${isDark ? 'text-slate-500' : 'text-gray-400'}`}>
-                                Zalecany format: DD.MM.YYYY
+                                {t('recommendedDateFormat')}
                             </Text>
                         )}
                         <View className="flex-row justify-between">
                             <TouchableOpacity className="flex-1 me-2 py-4 rounded-xl items-center border border-red-500" onPress={() => setEditModalVisible(false)}>
-                                <Text className="text-red-500 font-semibold text-base">Anuluj</Text>
+                                <Text className="text-red-500 font-semibold text-base">{t('cancel')}</Text>
                             </TouchableOpacity>
                             <TouchableOpacity className="flex-1 ms-2 bg-indigo-600 py-4 rounded-xl items-center" onPress={saveEdit}>
-                                <Text className="text-white font-bold text-base">Zapisz</Text>
+                                <Text className="text-white font-bold text-base">{t('save')}</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
                 </View>
             </Modal>
-
             {showDatePicker && (
                 <Modal visible={showDatePicker} transparent animationType="fade">
                     <View className="flex-1 bg-black/70 justify-center items-center p-6">
@@ -441,7 +732,6 @@ export default function ProfileScreen() {
                                         </Text>
                                         <IconSymbol name="chevron.down" size={16} color={isDark ? 'white' : 'black'} />
                                     </TouchableOpacity>
-
                                     <TouchableOpacity
                                         onPress={() => setViewMode(viewMode === 'years' ? 'days' : 'years')}
                                         className="flex-row items-center p-2 rounded-lg"
@@ -452,7 +742,6 @@ export default function ProfileScreen() {
                                         <IconSymbol name="chevron.down" size={16} color={isDark ? 'white' : 'black'} />
                                     </TouchableOpacity>
                                 </View>
-
                                 <View className="flex-row gap-2">
                                     <TouchableOpacity onPress={() => setPickerDate(subMonths(pickerDate, 1))} className="p-2">
                                         <IconSymbol name="chevron.left" size={24} color={isDark ? 'white' : 'black'} />
@@ -462,7 +751,6 @@ export default function ProfileScreen() {
                                     </TouchableOpacity>
                                 </View>
                             </View>
-
                             {/* Body */}
                             <View className="p-4 min-h-[300px]">
                                 {viewMode === 'days' && (
@@ -497,7 +785,6 @@ export default function ProfileScreen() {
                                         </View>
                                     </>
                                 )}
-
                                 {viewMode === 'months' && (
                                     <View className="flex-row flex-wrap justify-between">
                                         {Array.from({ length: 12 }).map((_, i) => (
@@ -513,7 +800,6 @@ export default function ProfileScreen() {
                                         ))}
                                     </View>
                                 )}
-
                                 {viewMode === 'years' && (
                                     <ScrollView className="max-h-[300px]" showsVerticalScrollIndicator={false}>
                                         <View className="flex-row flex-wrap justify-between">
@@ -535,11 +821,10 @@ export default function ProfileScreen() {
                                     </ScrollView>
                                 )}
                             </View>
-
                             {/* Footer */}
                             <View className="p-4 flex-row justify-end gap-2">
                                 <TouchableOpacity onPress={() => setShowDatePicker(false)} className="px-6 py-3">
-                                    <Text className="text-indigo-600 font-bold">ANULUJ</Text>
+                                    <Text className="text-indigo-600 font-bold">{t('cancel').toUpperCase()}</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity onPress={confirmCustomDate} className="px-6 py-3">
                                     <Text className="text-indigo-600 font-bold">OK</Text>
@@ -549,26 +834,70 @@ export default function ProfileScreen() {
                     </View>
                 </Modal>
             )}
-
             {/* History Modal */}
             <Modal visible={historyModalVisible} transparent animationType="slide">
                 <View className="flex-1 bg-black/70 justify-center p-6">
                     <View className={`rounded-3xl p-6 border max-h-[80%] ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-300'}`}>
-                        <Text className={`text-xl font-bold mb-5 text-center ${isDark ? 'text-slate-100' : 'text-gray-900'}`}>Historia stawek</Text>
+                        <Text className={`text-xl font-bold mb-5 text-center ${isDark ? 'text-slate-100' : 'text-gray-900'}`}>{t('rateHistoryTitle')}</Text>
                         <ScrollView>
                             {rateHistory.length > 0 ? rateHistory.map((item, index) => (
                                 <View key={index} className={`flex-row justify-between py-3 border-b ${isDark ? 'border-slate-700' : 'border-gray-50'}`}>
                                     <Text className={`${isDark ? 'text-slate-400' : 'text-gray-900'}`}>
-                                        {item.date?.toDate ? item.date.toDate().toLocaleDateString() : 'Brak daty'}
+                                        {item.date?.toDate ? item.date.toDate().toLocaleDateString() : t('noDate')}
                                     </Text>
                                     <Text className={`font-semibold ${isDark ? 'text-slate-300' : 'text-gray-600'}`}>{item.rate} zł/h</Text>
                                 </View>
                             )) : (
-                                <Text className="text-slate-400 text-center my-5">Brak historii zmian</Text>
+                                <Text className="text-slate-400 text-center my-5">{t('noRateHistory')}</Text>
                             )}
                         </ScrollView>
                         <TouchableOpacity className="bg-indigo-600 py-4 rounded-xl items-center mt-5" onPress={() => setHistoryModalVisible(false)}>
-                            <Text className="text-white font-bold text-base">Zamknij</Text>
+                            <Text className="text-white font-bold text-base">{t('closeBtn')}</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+            {/* Company Info Modal */}
+            <Modal visible={companyInfoModalVisible} transparent animationType="fade">
+                <View className="flex-1 bg-black/70 justify-center p-6">
+                    <View className={`rounded-3xl p-6 border max-h-[80%] ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-300'}`}>
+                        <Text className={`text-xl font-bold mb-5 text-center ${isDark ? 'text-slate-100' : 'text-gray-900'}`}>{t('employerDataTitle')}</Text>
+                        {selectedInviteForInfo && (
+                            <ScrollView className="max-h-[300px] mb-5" showsVerticalScrollIndicator={false}>
+                                <View className="mb-4">
+                                    <Text className={`text-xs uppercase font-bold tracking-widest ${isDark ? 'text-slate-500' : 'text-gray-400'}`}>{t('companyName')} / {t('roleEmployer')}</Text>
+                                    <Text className={`text-base font-semibold mt-1 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                                        {selectedInviteForInfo.employerCompanyName || selectedInviteForInfo.employerName}
+                                    </Text>
+                                </View>
+                                <View className="mb-4">
+                                    <Text className={`text-xs uppercase font-bold tracking-widest ${isDark ? 'text-slate-500' : 'text-gray-400'}`}>{t('contactPerson')}</Text>
+                                    <Text className={`text-base mt-1 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                                        {selectedInviteForInfo.employerName}
+                                    </Text>
+                                </View>
+                                <View className="mb-4">
+                                    <Text className={`text-xs uppercase font-bold tracking-widest ${isDark ? 'text-slate-500' : 'text-gray-400'}`}>{t('emailLabel')}</Text>
+                                    <Text className={`text-base mt-1 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                                        {selectedInviteForInfo.employerEmail}
+                                    </Text>
+                                </View>
+                                <View className="mb-4">
+                                    <Text className={`text-xs uppercase font-bold tracking-widest ${isDark ? 'text-slate-500' : 'text-gray-400'}`}>{t('phone')}</Text>
+                                    <Text className={`text-base mt-1 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                                        {selectedInviteForInfo.employerPhone || t('notProvided')}
+                                    </Text>
+                                </View>
+                                <View className="mb-4">
+                                    <Text className={`text-xs uppercase font-bold tracking-widest ${isDark ? 'text-slate-500' : 'text-gray-400'}`}>{t('companyDesc')}</Text>
+                                    <Text className={`text-sm mt-1 leading-5 ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>
+                                        {selectedInviteForInfo.employerCompanyDetails || t('noAdditionalDetails')}
+                                    </Text>
+                                </View>
+                            </ScrollView>
+                        )}
+                        <TouchableOpacity className="bg-indigo-600 py-4 rounded-xl items-center" onPress={() => setCompanyInfoModalVisible(false)}>
+                            <Text className="text-white font-bold text-base">{t('closeBtn')}</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -576,7 +905,6 @@ export default function ProfileScreen() {
         </View>
     );
 }
-
 function ThemeOption({ label, active, onPress, isDark }: { label: string, active: boolean, onPress: () => void, isDark: boolean }) {
     return (
         <TouchableOpacity className="flex-row justify-between items-center px-4 py-4" onPress={onPress}>
@@ -587,15 +915,29 @@ function ThemeOption({ label, active, onPress, isDark }: { label: string, active
         </TouchableOpacity>
     );
 }
-
-function ProfileItem({ label, value, onPress, hideEdit = false, isDark }: { label: string, value: string, onPress: () => void, hideEdit?: boolean, isDark: boolean }) {
+function ProfileItem({ label, value, onPress, hideEdit = false, isDark, isColumn = false }: { label: string, value: string, onPress: () => void, hideEdit?: boolean, isDark: boolean, isColumn?: boolean }) {
     const primaryIconColor = isDark ? '#94A3B8' : '#9CA3AF';
     const secondaryIconColor = isDark ? '#4F46E5' : '#5d55e7';
+    if (isColumn) {
+        return (
+            <View className="flex-col px-4 py-4">
+                <View className="flex-row justify-between items-center mb-2">
+                    <Text className={`text-base font-semibold ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>{label}</Text>
+                    {!hideEdit && (
+                        <TouchableOpacity onPress={onPress}>
+                            <IconSymbol name="pencil" size={18} color={secondaryIconColor} />
+                        </TouchableOpacity>
+                    )}
+                </View>
+                <Text className={`text-sm leading-5 ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>{value}</Text>
+            </View>
+        );
+    }
     return (
         <View className="flex-row justify-between items-center px-4 py-4">
             <Text className={`text-base ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>{label}</Text>
             <View className="flex-row items-center flex-1 justify-end ml-4">
-                <Text className={`text-base mr-3  font-semibold ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>{value}</Text>
+                <Text className={`text-base mr-3 font-semibold ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>{value}</Text>
                 {!hideEdit && (
                     <TouchableOpacity onPress={onPress}>
                         <IconSymbol name="pencil" size={18} color={secondaryIconColor} />

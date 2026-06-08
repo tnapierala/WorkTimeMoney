@@ -4,37 +4,43 @@ import { StatusBar } from 'expo-status-bar';
 import React, { useState } from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
-const slides = [
-    {
-        title: 'Witaj w WorkTimeMoney',
-        description: 'Twoje proste narzędzie do liczenia i śledzenia zarobków.',
-        buttonText: 'Zaczynajmy!',
-        color: '#4F46E5', // Indigo
-    },
-    {
-        title: 'Licz swoje zarobki',
-        description: 'Podaj przepracowane godziny oraz stawkę na rękę. My policzymy resztę i zapiszemy w bezpiecznej bazie.',
-        buttonText: 'Dalej',
-        color: '#7C3AED', // Violet
-    },
-    {
-        title: 'Przeglądaj historię',
-        description: 'Zawsze masz dostęp do swoich wyników z poprzednich miesięcy. Możesz je edytować w dowolnym momencie.',
-        buttonText: 'Gotowe',
-        color: '#2563EB', // Blue
-    },
-];
+import { useLanguage } from '../context/LanguageContext';
 
 export default function OnboardingScreen() {
+    const { t } = useLanguage();
     const [currentSlide, setCurrentSlide] = useState(0);
     const router = useRouter();
+
+    const slides = [
+        {
+            title: t('onboardingSlide1Title'),
+            description: t('onboardingSlide1Desc'),
+            buttonText: t('onboardingSlide1Btn'),
+            color: '#4F46E5', // Indigo
+        },
+        {
+            title: t('onboardingSlide2Title'),
+            description: t('onboardingSlide2Desc'),
+            buttonText: t('onboardingSlide2Btn'),
+            color: '#7C3AED', // Violet
+        },
+        {
+            title: t('onboardingSlide3Title'),
+            description: t('onboardingSlide3Desc'),
+            buttonText: t('onboardingSlide3Btn'),
+            color: '#2563EB', // Blue
+        },
+    ];
 
     const handleNext = async () => {
         if (currentSlide < slides.length - 1) {
             setCurrentSlide(currentSlide + 1);
         } else {
-            await AsyncStorage.setItem('hasSeenOnboarding', 'true');
+            try {
+                await AsyncStorage.setItem('hasSeenOnboarding', 'true');
+            } catch (err) {
+                console.error('[Onboarding] handleNext - Error saving onboarding flag:', err);
+            }
             router.replace('/login');
         }
     };

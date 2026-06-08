@@ -1,0 +1,97 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // 1. Users collection
+    match /users/{userId} {
+      // Allow any logged-in user to read user profiles.
+      // Necessary so employers can find employees by email and check their link status.
+      allow read: if isAuthenticated();
+
+      // Allow users to manage their own profiles.
+      // Allow employers to disconnect an employee (which updates employerId/employerName to null)
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) || (
+        isAuthenticated() && 
+        resource.data.employerId == request.auth.uid
+      );
+      allow delete: if isOwner(userId);
+
+      // 1a. User's private income entries (only owner can read/write - employer has NO access)
+      match /entries/{entryId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // 1b. User's rate history (only owner can read/write)
+      match /rateHistory/{historyId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // 1c. User's work entries (owner can write/read, employer can read)
+      match /work_entries/{entryId} {
+        allow write: if isOwner(userId);
+        allow read: if isOwner(userId) || (
+          isAuthenticated() && 
+          get(/databases/$(database)/documents/users/$(userId)).data.employerId == request.auth.uid
+        );
+      }
+    }
+
+    // 2. Invitations collection
+    match /invitations/{inviteId} {
+      // Allow read if user is the sender (employer) or the recipient (employee)
+      allow read: if isAuthenticated() && (
+        resource.data.employerId == request.auth.uid ||
+        resource.data.employeeUid == request.auth.uid ||
+        ('email' in request.auth.token && resource.data.employeeEmail == request.auth.token.email.lower())
+      );
+
+      // Allow creating an invitation if the creator is the employer
+      allow create: if isAuthenticated() && request.resource.data.employerId == request.auth.uid;
+
+      // Allow update/delete if user is the employer or the employee
+      allow update: if isAuthenticated() && (
+        resource.data.employerId == request.auth.uid ||
+        resource.data.employeeUid == request.auth.uid ||
+        ('email' in request.auth.token && resource.data.employeeEmail == request.auth.token.email.lower())
+      );
+      
+      allow delete: if isAuthenticated() && (
+        resource.data.employerId == request.auth.uid ||
+        resource.data.employeeUid == request.auth.uid
+      );
+    }
+
+    // 3. Assignments collection
+    match /assignments/{assignmentId} {
+      // Employer can read their own assignments
+      // Employee can read assignments they are assigned to
+      allow read: if isAuthenticated() && (
+        resource.data.employerId == request.auth.uid ||
+        ('employeeIds' in resource.data && request.auth.uid in resource.data.employeeIds)
+      );
+
+      // Only the employer can create assignments
+      allow create: if isAuthenticated() && request.resource.data.employerId == request.auth.uid;
+
+      // Employer can update/delete their assignments
+      // Employee can update (to add their confirmation) if they are in the employeeIds list
+      allow update: if isAuthenticated() && (
+        resource.data.employerId == request.auth.uid ||
+        ('employeeIds' in resource.data && request.auth.uid in resource.data.employeeIds)
+      );
+
+      allow delete: if isAuthenticated() && resource.data.employerId == request.auth.uid;
+    }
+  }
+}

@@ -2,12 +2,16 @@ import { Link, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { auth } from '../config/firebaseConfig';
 import { useAppTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
+import { useToast } from '../context/ToastContext';
 
 export default function LoginScreen() {
     const { isDark } = useAppTheme();
+    const { t } = useLanguage();
+    const { showToast } = useToast();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
@@ -15,7 +19,7 @@ export default function LoginScreen() {
 
     const handleLogin = async () => {
         if (!email || !password) {
-            Alert.alert('Błąd', 'Proszę wypełnić wszystkie pola.');
+            showToast({ message: t('fillAllFields'), type: 'error' });
             return;
         }
 
@@ -24,7 +28,7 @@ export default function LoginScreen() {
             await signInWithEmailAndPassword(auth, email, password);
             router.replace('/(tabs)');
         } catch (error: any) {
-            Alert.alert('Błąd logowania', 'Nieprawidłowy e-mail lub hasło.');
+            showToast({ message: t('loginError'), type: 'error' });
             console.error(error);
         } finally {
             setLoading(false);
@@ -39,16 +43,16 @@ export default function LoginScreen() {
             <StatusBar style={isDark ? "light" : "dark"} />
             <View className="flex-1 p-6 justify-center">
                 <View className="mb-10">
-                    <Text className={`text-4xl font-extrabold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>Zaloguj się</Text>
-                    <Text className={`text-base ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>Witaj ponownie w WorkTimeMoney!</Text>
+                    <Text className={`text-4xl font-extrabold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>{t('loginHeader')}</Text>
+                    <Text className={`text-base ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>{t('loginSubheader')}</Text>
                 </View>
 
                 <View className="mb-6">
                     <View className="mb-5">
-                        <Text className={`text-sm font-semibold mb-2 ${isDark ? 'text-white' : 'text-gray-700'}`}>E-mail</Text>
+                        <Text className={`text-sm font-semibold mb-2 ${isDark ? 'text-white' : 'text-gray-700'}`}>{t('emailLabel')}</Text>
                         <TextInput
                             className={`border rounded-xl p-4 text-base ${isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-900'}`}
-                            placeholder="Twój e-mail"
+                            placeholder={t('emailPlaceholder')}
                             placeholderTextColor={isDark ? "#94A3B8" : "#9CA3AF"}
                             value={email}
                             onChangeText={setEmail}
@@ -58,10 +62,10 @@ export default function LoginScreen() {
                     </View>
 
                     <View className="mb-5">
-                        <Text className={`text-sm font-semibold mb-2 ${isDark ? 'text-white' : 'text-gray-700'}`}>Hasło</Text>
+                        <Text className={`text-sm font-semibold mb-2 ${isDark ? 'text-white' : 'text-gray-700'}`}>{t('passwordLabel')}</Text>
                         <TextInput
                             className={`border rounded-xl p-4 text-base ${isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-900'}`}
-                            placeholder="Twoje hasło"
+                            placeholder={t('passwordPlaceholder')}
                             placeholderTextColor={isDark ? "#94A3B8" : "#9CA3AF"}
                             value={password}
                             onChangeText={setPassword}
@@ -77,16 +81,16 @@ export default function LoginScreen() {
                         {loading ? (
                             <ActivityIndicator color="#FFFFFF" />
                         ) : (
-                            <Text className="text-white text-lg font-bold">Zaloguj się</Text>
+                            <Text className="text-white text-lg font-bold">{t('loginBtn')}</Text>
                         )}
                     </TouchableOpacity>
                 </View>
 
                 <View className="flex-row justify-center mt-4">
-                    <Text className={`text-base ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>Nie masz jeszcze konta? </Text>
+                    <Text className={`text-base ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>{t('noAccount')} </Text>
                     <Link href="/register" asChild>
                         <TouchableOpacity>
-                            <Text className="text-indigo-600 text-base font-bold">Zarejestruj się</Text>
+                            <Text className="text-indigo-600 text-base font-bold">{t('registerNow')}</Text>
                         </TouchableOpacity>
                     </Link>
                 </View>
