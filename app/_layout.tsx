@@ -27,22 +27,24 @@ Notifications.setNotificationHandler({
   }),
 });
 
-function RootLayoutContent() {
-  const { isDark } = useAppTheme();
-  const { t } = useLanguage();
-  const [initializing, setInitializing] = useState(true);
-  const [user, setUser] = useState<any>(null);
-  const [hasSeenOnboarding, setHasSeenOnboarding] = useState<boolean | null>(null);
-  const [isReady, setIsReady] = useState(false); // Stan odpowiedzialny za ukrycie Splash Screen
+interface NavigationRedirectorProps {
+  initializing: boolean;
+  user: any;
+  hasSeenOnboarding: boolean | null;
+  setHasSeenOnboarding: React.Dispatch<React.SetStateAction<boolean | null>>;
+  setIsReady: React.Dispatch<React.SetStateAction<boolean>>;
+}
 
+function NavigationRedirector({
+  initializing,
+  user,
+  hasSeenOnboarding,
+  setHasSeenOnboarding,
+  setIsReady,
+}: NavigationRedirectorProps) {
   const segments = useSegments();
   const router = useRouter();
   const pathname = usePathname();
-
-  // (Tutaj pozostaje reszta Twoich standardowych useEffectów od Notifications, UserProfile itp.)
-  // (Pomięto dla skrócenia, zostaw je dokładnie takie jakie masz w pliku docelowym) ...
-
-  const [userProfile, setUserProfile] = useState<any>(null);
 
   useEffect(() => {
     const checkOnboarding = async () => {
@@ -55,18 +57,7 @@ function RootLayoutContent() {
       }
     };
     checkOnboarding();
-  }, [pathname]);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
-      if (initializing) setInitializing(false);
-      if (user) {
-        registerForPushNotificationsAsync(user.uid);
-      }
-    });
-    return unsubscribe;
-  }, [initializing]);
+  }, [pathname, setHasSeenOnboarding]);
 
   // Listen for push notification clicks and redirect accordingly
   useEffect(() => {
@@ -92,7 +83,6 @@ function RootLayoutContent() {
     if (initializing || hasSeenOnboarding === null) return;
 
     const performRedirect = () => {
-
       if (!hasSeenOnboarding) {
         // Force onboarding if they haven't seen it yet
         if (segments[0] !== 'onboarding') {
@@ -123,13 +113,39 @@ function RootLayoutContent() {
 
     const timeoutId = setTimeout(performRedirect, 0);
     return () => clearTimeout(timeoutId);
-  }, [user, initializing, hasSeenOnboarding, segments, router]);
+  }, [user, initializing, hasSeenOnboarding, segments, router, setIsReady]);
+
+  return null;
+}
+
+function RootLayoutContent() {
+  const { isDark } = useAppTheme();
+  const { t } = useLanguage();
+  const [initializing, setInitializing] = useState(true);
+  const [user, setUser] = useState<any>(null);
+  const [hasSeenOnboarding, setHasSeenOnboarding] = useState<boolean | null>(null);
+  const [isReady, setIsReady] = useState(false); // Stan odpowiedzialny za ukrycie Splash Screen
+
+  const [userProfile, setUserProfile] = useState<any>(null);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setUser(user);
+      if (initializing) setInitializing(false);
+      if (user) {
+        registerForPushNotificationsAsync(user.uid);
+      }
+    });
+    return unsubscribe;
+  }, [initializing]);
+
   // Ukryj natywny Splash Screen dopiero kiedy routing jest ustawiony a dane załadowane
   useEffect(() => {
     if (isReady) {
       SplashScreen.hideAsync();
     }
   }, [isReady]);
+
   const showLoader = initializing || hasSeenOnboarding === null || !isReady;
 
   return (
@@ -154,6 +170,15 @@ function RootLayoutContent() {
         <Stack.Screen name="work-history" options={{ headerShown: false }} />
         <Stack.Screen name="work-modal" options={{ presentation: 'modal', headerShown: false }} />
       </Stack>
+
+      <NavigationRedirector
+        initializing={initializing}
+        user={user}
+        hasSeenOnboarding={hasSeenOnboarding}
+        setHasSeenOnboarding={setHasSeenOnboarding}
+        setIsReady={setIsReady}
+      />
+
       {/* Dodatkowy spinner renderowany w trakcie ładowania (nawet jeśli zniknie Splash screen chwile wcześniej z powodów systemowych) */}
       {showLoader && (
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', backgroundColor: isDark ? '#0F172A' : '#F3F4F6', zIndex: 999 }}>

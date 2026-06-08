@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { useColorScheme as useDeviceColorScheme } from 'react-native';
+import { useColorScheme as useDeviceColorScheme, Platform } from 'react-native';
+import * as NavigationBar from 'expo-navigation-bar';
+import * as SystemUI from 'expo-system-ui';
 
 type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -34,6 +36,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const isDark = themeMode === 'system'
         ? deviceColorScheme === 'dark'
         : themeMode === 'dark';
+
+    useEffect(() => {
+        const themeColor = isDark ? '#0F172A' : '#F3F4F6';
+        SystemUI.setBackgroundColorAsync(themeColor);
+        if (Platform.OS === 'android') {
+            NavigationBar.setButtonStyleAsync(isDark ? 'light' : 'dark');
+        }
+    }, [isDark]);
 
     return (
         <ThemeContext.Provider value={{ themeMode, setThemeMode, isDark }}>

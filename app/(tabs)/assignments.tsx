@@ -1,9 +1,8 @@
 import { useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { addDoc, collection, doc, getDoc, getDocs, where, query, onSnapshot, serverTimestamp, updateDoc, deleteDoc } from 'firebase/firestore';
+import { addDoc, collection, doc, where, query, onSnapshot, serverTimestamp, updateDoc, deleteDoc } from 'firebase/firestore';
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, Text, TextInput, TouchableOpacity, View, Platform, Modal, RefreshControl } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { ActivityIndicator, Alert, ScrollView, Text, TextInput, TouchableOpacity, View, Modal, RefreshControl } from 'react-native';
 import { format } from 'date-fns';
 import { auth, db } from '../../config/firebaseConfig';
 import { useAppTheme } from '../../context/ThemeContext';
@@ -11,6 +10,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import { notifyUser } from '../../config/notificationService';
 import { IconSymbol } from '../../components/ui/icon-symbol';
 import { useToast } from '../../context/ToastContext';
+import { CustomDatePicker } from '../../components/CustomDatePicker';
 
 export default function AssignmentsScreen() {
   const { isDark } = useAppTheme();
@@ -92,24 +92,6 @@ export default function AssignmentsScreen() {
     // onSnapshot handles live data, just toggle refresh indicator
     setTimeout(() => setRefreshing(false), 500);
   }, []);
-  // Date picker handlers
-  const handleDateChange = (event: any, selectedDate?: Date) => {
-    if (Platform.OS === 'android') {
-      setShowDatePicker(false);
-      if (selectedDate) {
-        setDateVal(selectedDate);
-        setDateText(format(selectedDate, 'dd.MM.yyyy'));
-      }
-    } else {
-      if (selectedDate) {
-        setDateVal(selectedDate);
-      }
-    }
-  };
-  const confirmIOSDate = () => {
-    setDateText(format(dateVal, 'dd.MM.yyyy'));
-    setShowDatePicker(false);
-  };
   const parseDateString = (dateStr: string): Date => {
     try {
       const parts = dateStr.split('.');
@@ -216,24 +198,6 @@ export default function AssignmentsScreen() {
     setEditSelectedEmployeeIds(prev =>
       prev.includes(empId) ? prev.filter(id => id !== empId) : [...prev, empId]
     );
-  };
-  // Handle date change in edit modal
-  const handleEditDateChange = (event: any, selectedDate?: Date) => {
-    if (Platform.OS === 'android') {
-      setShowEditDatePicker(false);
-      if (selectedDate) {
-        setEditDateVal(selectedDate);
-        setEditDateText(format(selectedDate, 'dd.MM.yyyy'));
-      }
-    } else {
-      if (selectedDate) {
-        setEditDateVal(selectedDate);
-      }
-    }
-  };
-  const confirmIOSEditDate = () => {
-    setEditDateText(format(editDateVal, 'dd.MM.yyyy'));
-    setShowEditDatePicker(false);
   };
   // Save edited assignment
   const handleSaveEditAssignment = async () => {
@@ -393,41 +357,21 @@ export default function AssignmentsScreen() {
               onPress={() => setShowDatePicker(true)}
               className={`ml-3 p-4 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-gray-50 border-gray-300'}`}
             >
-              <IconSymbol name="calendar" size={24} color="#4F46E5" />
+              <IconSymbol name="calendar" size={20} color="#4F46E5" />
             </TouchableOpacity>
           </View>
         </View>
         {/* DatePicker Modals */}
-        {showDatePicker && Platform.OS === 'ios' && (
-          <Modal transparent animationType="slide" visible={showDatePicker}>
-            <View className="flex-1 justify-end bg-black/50">
-              <View className={`p-6 pb-10 rounded-t-3xl ${isDark ? 'bg-slate-800' : 'bg-white'}`}>
-                <View className="flex-row justify-between items-center mb-4">
-                  <TouchableOpacity onPress={() => setShowDatePicker(false)}>
-                    <Text className="text-red-500 font-bold text-base">{t('cancel')}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={confirmIOSDate}>
-                    <Text className="text-indigo-600 font-bold text-base">{t('done')}</Text>
-                  </TouchableOpacity>
-                </View>
-                <DateTimePicker
-                  value={dateVal}
-                  mode="date"
-                  display="spinner"
-                  onChange={handleDateChange}
-                />
-              </View>
-            </View>
-          </Modal>
-        )}
-        {showDatePicker && Platform.OS === 'android' && (
-          <DateTimePicker
-            value={dateVal}
-            mode="date"
-            display="default"
-            onChange={handleDateChange}
-          />
-        )}
+        {/* Custom DatePicker Modal */}
+        <CustomDatePicker
+          visible={showDatePicker}
+          value={dateVal}
+          onClose={() => setShowDatePicker(false)}
+          onChange={(selectedDate) => {
+            setDateVal(selectedDate);
+            setDateText(format(selectedDate, 'dd.MM.yyyy'));
+          }}
+        />
         {/* Send Button */}
         <TouchableOpacity
           className="btn-primary mt-2 flex-row"
@@ -628,41 +572,20 @@ export default function AssignmentsScreen() {
                     onPress={() => setShowEditDatePicker(true)}
                     className={`ml-3 p-4 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-gray-50 border-gray-300'}`}
                   >
-                    <IconSymbol name="calendar" size={24} color="#4F46E5" />
+                    <IconSymbol name="calendar" size={20} color="#4F46E5" />
                   </TouchableOpacity>
                 </View>
               </View>
-              {/* Edit DatePicker Modals */}
-              {showEditDatePicker && Platform.OS === 'ios' && (
-                <Modal transparent animationType="slide" visible={showEditDatePicker}>
-                  <View className="flex-1 justify-end bg-black/50">
-                    <View className={`p-6 pb-10 rounded-t-3xl ${isDark ? 'bg-slate-800' : 'bg-white'}`}>
-                      <View className="flex-row justify-between items-center mb-4">
-                        <TouchableOpacity onPress={() => setShowEditDatePicker(false)}>
-                          <Text className="text-red-500 font-bold text-base">{t('cancelBtn')}</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={confirmIOSEditDate}>
-                          <Text className="text-indigo-600 font-bold text-base">{t('done')}</Text>
-                        </TouchableOpacity>
-                      </View>
-                      <DateTimePicker
-                        value={editDateVal}
-                        mode="date"
-                        display="spinner"
-                        onChange={handleEditDateChange}
-                      />
-                    </View>
-                  </View>
-                </Modal>
-              )}
-              {showEditDatePicker && Platform.OS === 'android' && (
-                <DateTimePicker
-                  value={editDateVal}
-                  mode="date"
-                  display="default"
-                  onChange={handleEditDateChange}
-                />
-              )}
+              {/* Custom Edit DatePicker Modal */}
+              <CustomDatePicker
+                visible={showEditDatePicker}
+                value={editDateVal}
+                onClose={() => setShowEditDatePicker(false)}
+                onChange={(selectedDate) => {
+                  setEditDateVal(selectedDate);
+                  setEditDateText(format(selectedDate, 'dd.MM.yyyy'));
+                }}
+              />
               {/* Save / Cancel Buttons */}
               <View className="flex-row justify-between items-center mt-2 gap-3">
                 <TouchableOpacity

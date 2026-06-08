@@ -1,7 +1,7 @@
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useToast } from '../../context/ToastContext';
-import { addMonths, eachDayOfInterval, endOfMonth, endOfWeek, format, getDate, getMonth, getYear, isSameDay, isSameMonth, setMonth, setYear, startOfMonth, startOfWeek, subMonths } from 'date-fns';
-import { pl } from 'date-fns/locale';
+import { CustomDatePicker } from '../../components/CustomDatePicker';
+import { format } from 'date-fns';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect } from 'expo-router';
@@ -13,7 +13,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { auth, db } from '../../config/firebaseConfig';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAppTheme } from '../../context/ThemeContext';
-
 interface ProfileData {
     firstName: string;
     lastName: string;
@@ -30,12 +29,10 @@ interface ProfileData {
     companyPhone?: string;
     companyDetails?: string;
 }
-
 interface RateHistory {
     rate: number;
     date: any;
 }
-
 export default function ProfileScreen() {
     const { themeMode, setThemeMode, isDark } = useAppTheme();
     const { language, setLanguage, t } = useLanguage();
@@ -59,12 +56,10 @@ export default function ProfileScreen() {
     const [uploading, setUploading] = useState(false);
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [pickerDate, setPickerDate] = useState(new Date());
-    const [viewMode, setViewMode] = useState<'days' | 'months' | 'years'>('days');
 
     const fetchProfile = async () => {
         const user = auth.currentUser;
         if (!user) return;
-
         try {
             const docSnap = await getDoc(doc(db, 'users', user.uid));
             if (docSnap.exists()) {
@@ -76,11 +71,9 @@ export default function ProfileScreen() {
             setLoading(false);
         }
     };
-
     const fetchRateHistory = async () => {
         const user = auth.currentUser;
         if (!user) return;
-
         try {
             const q = query(
                 collection(db, `users/${user.uid}/rateHistory`),
@@ -97,13 +90,10 @@ export default function ProfileScreen() {
             console.error(error);
         }
     };
-
     const [pendingInvitations, setPendingInvitations] = useState<any[]>([]);
-
     useFocusEffect(
         useCallback(() => {
             fetchProfile();
-
             let unsubInvites: (() => void) | undefined;
             const user = auth.currentUser;
             if (user && user.email) {
@@ -120,13 +110,11 @@ export default function ProfileScreen() {
                     console.error('Error listening to employee invitations:', error);
                 });
             }
-
             return () => {
                 if (unsubInvites) unsubInvites();
             };
         }, [])
     );
-
     const handleAcceptInvitation = async (invite: any) => {
         const user = auth.currentUser;
         if (!user) return;
@@ -136,21 +124,18 @@ export default function ProfileScreen() {
                 status: 'accepted',
                 employeeUid: user.uid
             });
-
             // 2. Update employee's user document in Firestore
             await updateDoc(doc(db, 'users', user.uid), {
                 employerId: invite.employerId,
                 employerName: invite.employerName,
                 employerCompanyName: invite.employerCompanyName || ''
             });
-
             setProfile(prev => ({
                 ...prev,
                 employerId: invite.employerId,
                 employerName: invite.employerName,
                 employerCompanyName: invite.employerCompanyName || ''
             }));
-
             setPendingInvitations(prev => prev.filter(inv => inv.id !== invite.id));
             showToast({ message: `Zaakceptowano zaproszenie! Jesteś teraz przypisany do pracodawcy: ${invite.employerCompanyName || invite.employerName}`, type: 'success' });
         } catch (error) {
@@ -158,7 +143,6 @@ export default function ProfileScreen() {
             showToast({ message: 'Nie udało się zaakceptować zaproszenia.', type: 'error' });
         }
     };
-
     const handleDeclineInvitation = async (inviteId: string) => {
         try {
             await updateDoc(doc(db, 'invitations', inviteId), {
@@ -171,7 +155,6 @@ export default function ProfileScreen() {
             showToast({ message: 'Nie udało się odrzucić zaproszenia.', type: 'error' });
         }
     };
-
     const handleDisconnectEmployer = async () => {
         const user = auth.currentUser;
         if (!user || !user.email) return;
@@ -187,13 +170,11 @@ export default function ProfileScreen() {
                     onPress: async () => {
                         try {
                             const employerId = profile.employerId;
-
                             // 1. Update user profile in Firestore
                             await updateDoc(doc(db, 'users', user.uid), {
                                 employerId: null,
                                 employerName: null
                             });
-
                             // 2. Delete accepted invitation in Firestore
                             const q = query(
                                 collection(db, 'invitations'),
@@ -205,17 +186,14 @@ export default function ProfileScreen() {
                             if (!snap.empty) {
                                 await deleteDoc(doc(db, 'invitations', snap.docs[0].id));
                             }
-
                             setProfile(prev => ({
                                 ...prev,
                                 employerId: null,
                                 employerName: null
                             }));
-
                             showToast({ message: 'Zostałeś odpięty od pracodawcy.', type: 'success' });
                         } catch (error) {
                             console.error(error);
-
                             showToast({ message: 'Nie udało się rozłączyć z pracodawcą.', type: 'error' });
                         }
                     }
@@ -223,17 +201,14 @@ export default function ProfileScreen() {
             ]
         );
     };
-
     const openEdit = (field: keyof ProfileData) => {
         setEditingField(field);
         setEditValue(profile[field]?.toString() || '');
         setEditModalVisible(true);
     };
-
     const saveEdit = async () => {
         const user = auth.currentUser;
         if (!user || !editingField) return;
-
         try {
             let finalValue: any = editValue;
             if (editingField === 'defaultRate') {
@@ -292,47 +267,10 @@ export default function ProfileScreen() {
         }
     };
 
-    const onDateChange = (event: any, selectedDate?: Date) => {
-        if (selectedDate) {
-            setPickerDate(selectedDate);
-        }
-    };
-
-    const confirmCustomDate = () => {
-        if (pickerDate) {
-            setEditValue(format(pickerDate, 'dd.MM.yyyy'));
-        }
-        setShowDatePicker(false);
-    };
-
     const openCustomDatePicker = () => {
-        if (editValue) {
-            try {
-                const parts = editValue.split('.');
-                if (parts.length === 3) {
-                    const parsed = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
-                    if (!isNaN(parsed.getTime())) {
-                        setPickerDate(parsed);
-                    }
-                }
-            } catch (e) { }
-        }
-        setViewMode('days');
+        if (editValue) { }
+        try { } catch (e) { }
         setShowDatePicker(true);
-    };
-
-    const oldDateChange = async (event: any, selectedDate?: Date) => {
-        if (Platform.OS === 'android') {
-            setShowDatePicker(false);
-        }
-        if (selectedDate) {
-            const day = selectedDate.getDate().toString().padStart(2, '0');
-            const month = (selectedDate.getMonth() + 1).toString().padStart(2, '0');
-            const year = selectedDate.getFullYear();
-            const dateString = `${day}.${month}.${year}`;
-            // Update the edit value in the modal instead of direct save
-            setEditValue(dateString);
-        }
     };
 
     if (loading) {
@@ -342,11 +280,9 @@ export default function ProfileScreen() {
             </View>
         );
     }
-
     const primaryIconColor = isDark ? '#94A3B8' : '#9CA3AF';
     const secondaryIconColor = isDark ? '#4F46E5' : '#5d55e7';
     const thirdIconColor = isDark ? '#c6cbd2' : '#fff';
-
     return (
         <View className={`flex-1 ${isDark ? 'bg-slate-900' : 'bg-gray-100'}`}>
             <StatusBar style={isDark ? "light" : "dark"} />
@@ -696,7 +632,7 @@ export default function ProfileScreen() {
                                     className="absolute right-3 top-2 w-10 h-10 items-center justify-center"
                                     style={{ zIndex: 50 }}
                                 >
-                                    <IconSymbol name="calendar" size={24} color={secondaryIconColor} />
+                                    <IconSymbol name="calendar" size={20} color={secondaryIconColor} />
                                 </TouchableOpacity>
                             )}
                         </View>
@@ -717,122 +653,15 @@ export default function ProfileScreen() {
                 </View>
             </Modal>
             {showDatePicker && (
-                <Modal visible={showDatePicker} transparent animationType="fade">
-                    <View className="flex-1 bg-black/70 justify-center items-center p-6">
-                        <View className={`w-full max-w-[340px] rounded-[28px] overflow-hidden ${isDark ? 'bg-[#1C1B1F] border border-[#49454F]' : 'bg-[#F2F2F2] border border-gray-200'}`}>
-                            {/* Header */}
-                            <View className="p-4 flex-row justify-between items-center border-b border-[#49454F]/20">
-                                <View className="flex-row items-center gap-1">
-                                    <TouchableOpacity
-                                        onPress={() => setViewMode(viewMode === 'months' ? 'days' : 'months')}
-                                        className="flex-row items-center p-2 rounded-lg"
-                                    >
-                                        <Text className={`font-bold text-lg ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                                            {format(pickerDate, 'MMM', { locale: pl })}
-                                        </Text>
-                                        <IconSymbol name="chevron.down" size={16} color={isDark ? 'white' : 'black'} />
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                        onPress={() => setViewMode(viewMode === 'years' ? 'days' : 'years')}
-                                        className="flex-row items-center p-2 rounded-lg"
-                                    >
-                                        <Text className={`font-bold text-lg ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                                            {format(pickerDate, 'yyyy')}
-                                        </Text>
-                                        <IconSymbol name="chevron.down" size={16} color={isDark ? 'white' : 'black'} />
-                                    </TouchableOpacity>
-                                </View>
-                                <View className="flex-row gap-2">
-                                    <TouchableOpacity onPress={() => setPickerDate(subMonths(pickerDate, 1))} className="p-2">
-                                        <IconSymbol name="chevron.left" size={24} color={isDark ? 'white' : 'black'} />
-                                    </TouchableOpacity>
-                                    <TouchableOpacity onPress={() => setPickerDate(addMonths(pickerDate, 1))} className="p-2">
-                                        <IconSymbol name="chevron.right" size={24} color={isDark ? 'white' : 'black'} />
-                                    </TouchableOpacity>
-                                </View>
-                            </View>
-                            {/* Body */}
-                            <View className="p-4 min-h-[300px]">
-                                {viewMode === 'days' && (
-                                    <>
-                                        <View className="flex-row justify-between mb-2">
-                                            {['pn', 'wt', 'śr', 'cz', 'pt', 'so', 'nd'].map(d => (
-                                                <Text key={d} className={`w-[40px] text-center text-xs font-medium ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>
-                                                    {d.toUpperCase()}
-                                                </Text>
-                                            ))}
-                                        </View>
-                                        <View className="flex-row flex-wrap">
-                                            {(() => {
-                                                const start = startOfWeek(startOfMonth(pickerDate), { weekStartsOn: 1 });
-                                                const end = endOfWeek(endOfMonth(pickerDate), { weekStartsOn: 1 });
-                                                return eachDayOfInterval({ start, end }).map(day => {
-                                                    const isCurrentMonth = isSameMonth(day, pickerDate);
-                                                    const isSelected = isSameDay(day, pickerDate);
-                                                    return (
-                                                        <TouchableOpacity
-                                                            key={day.toISOString()}
-                                                            onPress={() => setPickerDate(day)}
-                                                            className={`w-[40px] h-[40px] items-center justify-center rounded-full my-0.5 ${isSelected ? 'bg-indigo-600' : ''}`}
-                                                        >
-                                                            <Text className={`text-sm ${isSelected ? 'text-white font-bold' : isCurrentMonth ? (isDark ? 'text-slate-200' : 'text-gray-900') : (isDark ? 'text-slate-600' : 'text-gray-300')}`}>
-                                                                {getDate(day)}
-                                                            </Text>
-                                                        </TouchableOpacity>
-                                                    );
-                                                });
-                                            })()}
-                                        </View>
-                                    </>
-                                )}
-                                {viewMode === 'months' && (
-                                    <View className="flex-row flex-wrap justify-between">
-                                        {Array.from({ length: 12 }).map((_, i) => (
-                                            <TouchableOpacity
-                                                key={i}
-                                                onPress={() => { setPickerDate(setMonth(pickerDate, i)); setViewMode('days'); }}
-                                                className={`w-[30%] py-4 items-center rounded-xl mb-2 ${getMonth(pickerDate) === i ? 'bg-indigo-600' : isDark ? 'bg-slate-800' : 'bg-gray-100'}`}
-                                            >
-                                                <Text className={`font-medium ${getMonth(pickerDate) === i ? 'text-white' : isDark ? 'text-slate-200' : 'text-gray-900'}`}>
-                                                    {format(new Date(2021, i, 1), 'LLL', { locale: pl })}
-                                                </Text>
-                                            </TouchableOpacity>
-                                        ))}
-                                    </View>
-                                )}
-                                {viewMode === 'years' && (
-                                    <ScrollView className="max-h-[300px]" showsVerticalScrollIndicator={false}>
-                                        <View className="flex-row flex-wrap justify-between">
-                                            {Array.from({ length: 100 }).map((_, i) => {
-                                                const year = new Date().getFullYear() - i;
-                                                return (
-                                                    <TouchableOpacity
-                                                        key={year}
-                                                        onPress={() => { setPickerDate(setYear(pickerDate, year)); setViewMode('days'); }}
-                                                        className={`w-[30%] py-4 items-center rounded-xl mb-2 ${getYear(pickerDate) === year ? 'bg-indigo-600' : isDark ? 'bg-slate-800' : 'bg-gray-100'}`}
-                                                    >
-                                                        <Text className={`font-medium ${getYear(pickerDate) === year ? 'text-white' : isDark ? 'text-slate-200' : 'text-gray-900'}`}>
-                                                            {year}
-                                                        </Text>
-                                                    </TouchableOpacity>
-                                                );
-                                            })}
-                                        </View>
-                                    </ScrollView>
-                                )}
-                            </View>
-                            {/* Footer */}
-                            <View className="p-4 flex-row justify-end gap-2">
-                                <TouchableOpacity onPress={() => setShowDatePicker(false)} className="px-6 py-3">
-                                    <Text className="text-indigo-600 font-bold">{t('cancel').toUpperCase()}</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity onPress={confirmCustomDate} className="px-6 py-3">
-                                    <Text className="text-indigo-600 font-bold">OK</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    </View>
-                </Modal>
+                <CustomDatePicker
+                    visible={showDatePicker}
+                    value={pickerDate}
+                    onClose={() => setShowDatePicker(false)}
+                    onChange={(date) => {
+                        setPickerDate(date);
+                        setEditValue(format(date, 'dd.MM.yyyy'));
+                    }}
+                />
             )}
             {/* History Modal */}
             <Modal visible={historyModalVisible} transparent animationType="slide">

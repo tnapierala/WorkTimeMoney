@@ -74,20 +74,20 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         switch (type) {
             case 'success':
                 return {
-                    bg: isDark ? 'bg-slate-800 border-l-4 border-emerald-500 shadow-2xl shadow-black/40' : 'bg-white border-l-4 border-emerald-500 shadow-xl shadow-gray-400/30',
+                    borderColor: '#10B981',
                     iconColor: '#10B981',
                     iconName: 'checkmark.circle.fill',
                 };
             case 'error':
                 return {
-                    bg: isDark ? 'bg-slate-800 border-l-4 border-rose-500 shadow-2xl shadow-black/40' : 'bg-white border-l-4 border-rose-500 shadow-xl shadow-gray-400/30',
+                    borderColor: '#EF4444',
                     iconColor: '#EF4444',
                     iconName: 'xmark.circle.fill',
                 };
             case 'info':
             default:
                 return {
-                    bg: isDark ? 'bg-slate-800 border-l-4 border-indigo-500 shadow-2xl shadow-black/40' : 'bg-white border-l-4 border-indigo-500 shadow-xl shadow-gray-400/30',
+                    borderColor: '#4F46E5',
                     iconColor: '#4F46E5',
                     iconName: 'info.circle',
                 };
@@ -109,9 +109,25 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                         },
                     ]}
                 >
-                    <View className={`flex-row items-center px-4 py-3.5 rounded-2xl border border-gray-300/10 ${config.bg}`}>
+                    <View 
+                        className="flex-row items-center px-4 py-3.5 rounded-2xl border"
+                        style={{
+                            backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
+                            borderLeftWidth: 4,
+                            borderLeftColor: config.borderColor,
+                            borderColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)',
+                            shadowColor: isDark ? '#000000' : '#94A3B8',
+                            shadowOffset: { width: 0, height: 10 },
+                            shadowOpacity: isDark ? 0.4 : 0.25,
+                            shadowRadius: isDark ? 20 : 15,
+                            elevation: 8,
+                        }}
+                    >
                         <IconSymbol name={config.iconName} size={20} color={config.iconColor} />
-                        <Text className={`ml-3 mr-2 text-sm font-semibold flex-1 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                        <Text 
+                            className="ml-3 mr-2 text-sm font-semibold flex-1"
+                            style={{ color: isDark ? '#FFFFFF' : '#111827' }}
+                        >
                             {message}
                         </Text>
                     </View>
